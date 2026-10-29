@@ -1,1 +1,498 @@
+--==================================================
+-- RANDOM HUB v1.0
+-- UI ONLY: Large window + floating mini button
+-- Single tab: Home / Join Discord
+-- No gameplay systems, no key system, no game guard.
+--==================================================
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
+
+local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then return end
+
+-- Prefer executor UI root when available; fall back to CoreGui/PlayerGui.
+local UIParent = nil
+pcall(function()
+    if type(gethui) == "function" then
+        UIParent = gethui()
+    end
+end)
+UIParent = UIParent or CoreGui
+
+-- Remove a previous copy of this UI only.
+for _, name in ipairs({"FlyUI", "FlyToggle", "CloverfallHomeUI", "CloverfallMiniUI"}) do
+    pcall(function()
+        local old = UIParent:FindFirstChild(name)
+        if old then old:Destroy() end
+    end)
+    pcall(function()
+        local old = LocalPlayer:FindFirstChildOfClass("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild(name)
+        if old then old:Destroy() end
+    end)
+end
+
+local CONFIG = {
+    Version = "1.0",
+    UISize = UDim2.fromOffset(600, 460),
+    UIOffset = UDim2.new(0.5, -300, 0.5, -230),
+    UIScale = 1,
+}
+
+-- Cloverfall UI palette copied from the original script.
+local Theme = {
+    Bg          = Color3.fromRGB(50, 50, 56),
+    BgSecondary = Color3.fromRGB(61, 61, 68),
+    Card        = Color3.fromRGB(70, 70, 77),
+    CardHover   = Color3.fromRGB(82, 82, 89),
+    Stroke      = Color3.fromRGB(60, 60, 80),
+    Accent1     = Color3.fromRGB(0, 0, 0),
+    Accent2     = Color3.fromRGB(0, 120, 255),
+    Text        = Color3.fromRGB(240, 240, 250),
+    TextDim     = Color3.fromRGB(150, 150, 170),
+    Danger      = Color3.fromRGB(255, 80, 110),
+}
+
+local connections = {}
+local activeTweens = {}
+local destroyed = false
+local uiOpen = true
+
+local function connect(signal, callback)
+    local connection = signal:Connect(callback)
+    table.insert(connections, connection)
+    return connection
+end
+
+local function addCorner(object, radius)
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radius or 10)
+    corner.Parent = object
+    return corner
+end
+
+local function addStroke(object, color, thickness, transparency)
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = color or Theme.Stroke
+    stroke.Thickness = thickness or 1
+    stroke.Transparency = transparency or 0
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Parent = object
+    return stroke
+end
+
+local function addGradient(object, color1, color2, rotation)
+    local gradient = Instance.new("UIGradient")
+    gradient.Color = ColorSequence.new(color1, color2)
+    gradient.Rotation = rotation or 0
+    gradient.Parent = object
+    return gradient
+end
+
+local function tween(object, properties, duration, style, direction)
+    if destroyed or not object then return nil end
+    local info = TweenInfo.new(
+        duration or 0.18,
+        style or Enum.EasingStyle.Quad,
+        direction or Enum.EasingDirection.Out
+    )
+    local animation = TweenService:Create(object, info, properties)
+    activeTweens[animation] = true
+    animation.Completed:Connect(function()
+        activeTweens[animation] = nil
+    end)
+    animation:Play()
+    return animation
+end
+
+-- Main ScreenGui.
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FlyUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 999
+ScreenGui.Parent = UIParent
+
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = CONFIG.UISize
+Main.Position = CONFIG.UIOffset
+Main.BackgroundColor3 = Theme.Bg
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.ClipsDescendants = true
+Main.Parent = ScreenGui
+addCorner(Main, 18)
+addStroke(Main, Theme.Stroke, 1, 0.3)
+addGradient(Main, Color3.fromRGB(60, 60, 66), Color3.fromRGB(44, 44, 50), 90)
+
+local MainScale = Instance.new("UIScale")
+MainScale.Scale = CONFIG.UIScale
+MainScale.Parent = Main
+
+-- Header: black -> Cloverfall blue.
+local HEADER_H = 72
+local Header = Instance.new("Frame")
+Header.Name = "Header"
+Header.Size = UDim2.new(1, 0, 0, HEADER_H)
+Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Header.BorderSizePixel = 0
+Header.ZIndex = 2
+Header.Parent = Main
+addCorner(Header, 18)
+addGradient(Header, Theme.Accent1, Theme.Accent2, 45)
+
+local HeaderCover = Instance.new("Frame")
+HeaderCover.Name = "HeaderCover"
+HeaderCover.Size = UDim2.new(1, 0, 0, 18)
+HeaderCover.Position = UDim2.new(0, 0, 1, -18)
+HeaderCover.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+HeaderCover.BorderSizePixel = 0
+HeaderCover.ZIndex = 3
+HeaderCover.Parent = Header
+addGradient(HeaderCover, Theme.Accent1, Theme.Accent2, 45)
+
+local Logo = Instance.new("TextLabel")
+Logo.Name = "Logo"
+Logo.Size = UDim2.fromOffset(42, 42)
+Logo.Position = UDim2.new(0, 20, 0.5, -21)
+Logo.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+Logo.BackgroundTransparency = 0.85
+Logo.Text = "🎲"
+Logo.TextColor3 = Color3.fromRGB(255, 255, 255)
+Logo.Font = Enum.Font.GothamBold
+Logo.TextSize = 24
+Logo.ZIndex = 4
+Logo.Parent = Header
+addCorner(Logo, 12)
+
+local Title = Instance.new("TextLabel")
+Title.Name = "Title"
+Title.Size = UDim2.new(1, -180, 0, 24)
+Title.Position = UDim2.new(0, 74, 0, 16)
+Title.BackgroundTransparency = 1
+Title.Text = "RANDOM HUB"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.ZIndex = 4
+Title.Parent = Header
+
+local Subtitle = Instance.new("TextLabel")
+Subtitle.Name = "Subtitle"
+Subtitle.Size = UDim2.new(1, -180, 0, 16)
+Subtitle.Position = UDim2.new(0, 74, 0, 40)
+Subtitle.BackgroundTransparency = 1
+Subtitle.Text = "v" .. CONFIG.Version
+Subtitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+Subtitle.TextTransparency = 0.3
+Subtitle.Font = Enum.Font.Gotham
+Subtitle.TextSize = 12
+Subtitle.TextXAlignment = Enum.TextXAlignment.Left
+Subtitle.ZIndex = 4
+Subtitle.Parent = Header
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Name = "CloseBtn"
+CloseBtn.Size = UDim2.fromOffset(32, 32)
+CloseBtn.Position = UDim2.new(1, -44, 0, 20)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.BackgroundTransparency = 0.85
+CloseBtn.BorderSizePixel = 0
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.TextSize = 16
+CloseBtn.ZIndex = 5
+CloseBtn.AutoButtonColor = false
+CloseBtn.Parent = Header
+addCorner(CloseBtn, 10)
+connect(CloseBtn.MouseEnter, function()
+    tween(CloseBtn, {BackgroundTransparency = 0.6, BackgroundColor3 = Theme.Danger}, 0.15)
+end)
+connect(CloseBtn.MouseLeave, function()
+    tween(CloseBtn, {BackgroundTransparency = 0.85, BackgroundColor3 = Color3.fromRGB(255, 255, 255)}, 0.15)
+end)
+
+-- Drag main UI by header.
+do
+    local dragging = false
+    local dragStart = nil
+    local startPosition = nil
+    connect(Header.InputBegan, function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPosition = Main.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    connect(UserInputService.InputChanged, function(input)
+        if not dragging then return end
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            local delta = input.Position - dragStart
+            Main.Position = UDim2.new(
+                startPosition.X.Scale, startPosition.X.Offset + delta.X,
+                startPosition.Y.Scale, startPosition.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- Sidebar with exactly one tab: Home.
+local SIDEBAR_W = 150
+local Sidebar = Instance.new("Frame")
+Sidebar.Name = "Sidebar"
+Sidebar.Size = UDim2.new(0, SIDEBAR_W, 1, -HEADER_H - 24)
+Sidebar.Position = UDim2.new(0, 16, 0, HEADER_H + 12)
+Sidebar.BackgroundColor3 = Theme.BgSecondary
+Sidebar.BorderSizePixel = 0
+Sidebar.ZIndex = 2
+Sidebar.Parent = Main
+addCorner(Sidebar, 12)
+addStroke(Sidebar, Theme.Stroke, 1, 0.5)
+
+local SidebarLayout = Instance.new("UIListLayout")
+SidebarLayout.Padding = UDim.new(0, 8)
+SidebarLayout.SortOrder = Enum.SortOrder.LayoutOrder
+SidebarLayout.Parent = Sidebar
+
+local SidebarPad = Instance.new("UIPadding")
+SidebarPad.PaddingTop = UDim.new(0, 10)
+SidebarPad.PaddingLeft = UDim.new(0, 8)
+SidebarPad.PaddingRight = UDim.new(0, 8)
+SidebarPad.Parent = Sidebar
+
+local ContentHolder = Instance.new("Frame")
+ContentHolder.Name = "ContentHolder"
+ContentHolder.Size = UDim2.new(1, -(SIDEBAR_W + 48), 1, -(HEADER_H + 24))
+ContentHolder.Position = UDim2.new(0, SIDEBAR_W + 32, 0, HEADER_H + 12)
+ContentHolder.BackgroundTransparency = 1
+ContentHolder.ClipsDescendants = true
+ContentHolder.ZIndex = 2
+ContentHolder.Parent = Main
+
+local HomeTab = Instance.new("TextButton")
+HomeTab.Name = "Tab_Home"
+HomeTab.Size = UDim2.new(1, 0, 0, 40)
+HomeTab.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+HomeTab.BackgroundTransparency = 0
+HomeTab.BorderSizePixel = 0
+HomeTab.Text = ""
+HomeTab.AutoButtonColor = false
+HomeTab.LayoutOrder = 1
+HomeTab.ZIndex = 3
+HomeTab.Parent = Sidebar
+addCorner(HomeTab, 8)
+addGradient(HomeTab, Theme.Accent1, Theme.Accent2, 0)
+
+local HomeTabLabel = Instance.new("TextLabel")
+HomeTabLabel.Name = "TabLabel"
+HomeTabLabel.Size = UDim2.new(1, -24, 1, 0)
+HomeTabLabel.Position = UDim2.new(0, 12, 0, 0)
+HomeTabLabel.BackgroundTransparency = 1
+HomeTabLabel.Text = "Home"
+HomeTabLabel.TextColor3 = Color3.fromRGB(245, 248, 255)
+HomeTabLabel.Font = Enum.Font.GothamBold
+HomeTabLabel.TextSize = 13
+HomeTabLabel.TextXAlignment = Enum.TextXAlignment.Left
+HomeTabLabel.ZIndex = 4
+HomeTabLabel.Parent = HomeTab
+
+local HomeIndicator = Instance.new("Frame")
+HomeIndicator.Name = "Indicator"
+HomeIndicator.Size = UDim2.new(0, 3, 0.82, 0)
+HomeIndicator.Position = UDim2.new(0, 0, 0.5, -16)
+HomeIndicator.BackgroundColor3 = Theme.Accent2
+HomeIndicator.BorderSizePixel = 0
+HomeIndicator.ZIndex = 5
+HomeIndicator.Parent = HomeTab
+addCorner(HomeIndicator, 2)
+addStroke(HomeTab, Color3.fromRGB(42, 120, 255), 1, 0.28)
+
+local HomePage = Instance.new("Frame")
+HomePage.Name = "Home"
+HomePage.Size = UDim2.new(1, 0, 1, 0)
+HomePage.BackgroundTransparency = 1
+HomePage.Visible = true
+HomePage.ZIndex = 2
+HomePage.Parent = ContentHolder
+
+-- Home contains only the Discord card; no changelog/updates card.
+local DiscordCard = Instance.new("Frame")
+DiscordCard.Name = "DiscordCard"
+DiscordCard.Size = UDim2.new(1, 0, 0, 56)
+DiscordCard.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+DiscordCard.BorderSizePixel = 0
+DiscordCard.LayoutOrder = 1
+DiscordCard.Parent = HomePage
+addCorner(DiscordCard, 14)
+addStroke(DiscordCard, Theme.Stroke, 1, 0.5)
+addGradient(DiscordCard, Theme.Accent1, Theme.Accent2, 45)
+
+local DiscordText = Instance.new("TextLabel")
+DiscordText.Name = "DiscordText"
+DiscordText.Size = UDim2.new(1, -32, 1, 0)
+DiscordText.Position = UDim2.new(0, 16, 0, 0)
+DiscordText.BackgroundTransparency = 1
+DiscordText.Text = "Join Discord"
+DiscordText.TextColor3 = Color3.fromRGB(255, 255, 255)
+DiscordText.Font = Enum.Font.GothamBold
+DiscordText.TextSize = 16
+DiscordText.TextXAlignment = Enum.TextXAlignment.Center
+DiscordText.Parent = DiscordCard
+
+local DiscordBtn = Instance.new("TextButton")
+DiscordBtn.Name = "DiscordButton"
+DiscordBtn.Size = UDim2.new(1, 0, 1, 0)
+DiscordBtn.BackgroundTransparency = 1
+DiscordBtn.Text = ""
+DiscordBtn.ZIndex = 3
+DiscordBtn.Parent = DiscordCard
+connect(DiscordBtn.MouseButton1Click, function()
+    local url = "https://discord.gg/wstMsZp2za"
+    local opened = pcall(function()
+        GuiService:OpenBrowserWindow(url)
+    end)
+    if not opened then
+        local copied = false
+        local clip = nil
+        pcall(function()
+            if type(setclipboard) == "function" then clip = setclipboard end
+        end)
+        if clip then copied = pcall(clip, url) end
+        pcall(function()
+            StarterGui:SetCore("SendNotification", {
+                Title = "Discord",
+                Text = copied and "Link copied to clipboard!" or "Open this invite: " .. url,
+                Duration = 4,
+            })
+        end)
+    end
+end)
+
+-- Small floating button (🎲): click toggles the large window; drag moves it.
+local SmallGui = Instance.new("ScreenGui")
+SmallGui.Name = "FlyToggle"
+SmallGui.ResetOnSpawn = false
+SmallGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+SmallGui.IgnoreGuiInset = true
+SmallGui.DisplayOrder = 1000
+SmallGui.Parent = UIParent
+
+local FloatingBtn = Instance.new("TextButton")
+FloatingBtn.Name = "FloatingBtn"
+FloatingBtn.Size = UDim2.fromOffset(60, 60)
+FloatingBtn.Position = UDim2.new(0, 20, 0.5, -30)
+FloatingBtn.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+FloatingBtn.BorderSizePixel = 0
+FloatingBtn.Text = "🎲"
+FloatingBtn.TextColor3 = Theme.Accent2
+FloatingBtn.Font = Enum.Font.GothamBold
+FloatingBtn.TextSize = 30
+FloatingBtn.AutoButtonColor = false
+FloatingBtn.Active = true
+FloatingBtn.Parent = SmallGui
+addCorner(FloatingBtn, 30)
+addStroke(FloatingBtn, Color3.fromRGB(255, 255, 255), 2, 0.7)
+addGradient(FloatingBtn, Theme.Accent1, Theme.Accent2, 45)
+
+local function openUI()
+    if destroyed or uiOpen then return end
+    uiOpen = true
+    ScreenGui.Enabled = true
+    Main.Size = UDim2.fromOffset(0, 0)
+    Main.Position = UDim2.new(0.5, 0, 0.5, 0)
+    tween(Main, {Size = CONFIG.UISize, Position = CONFIG.UIOffset}, 0.3, Enum.EasingStyle.Back)
+end
+
+local function hideUI()
+    if destroyed or not uiOpen then return end
+    uiOpen = false
+    tween(Main, {Size = UDim2.fromOffset(0, 0), Position = UDim2.new(0.5, 0, 0.5, 0)}, 0.2)
+    task.delay(0.21, function()
+        if not destroyed and not uiOpen and ScreenGui then
+            ScreenGui.Enabled = false
+            Main.Size = CONFIG.UISize
+            Main.Position = CONFIG.UIOffset
+        end
+    end)
+end
+
+local function destroyUI()
+    if destroyed then return end
+    destroyed = true
+    for _, connection in ipairs(connections) do
+        pcall(function() connection:Disconnect() end)
+    end
+    for animation in pairs(activeTweens) do
+        pcall(function() animation:Cancel() end)
+    end
+    pcall(function() ScreenGui:Destroy() end)
+    pcall(function() SmallGui:Destroy() end)
+    pcall(function() if _G.__CloverfallHomeUIStop == destroyUI then _G.__CloverfallHomeUIStop = nil end end)
+end
+
+local function toggleUI()
+    if uiOpen then hideUI() else openUI() end
+end
+
+connect(FloatingBtn.MouseEnter, function()
+    tween(FloatingBtn, {Size = UDim2.fromOffset(66, 66)}, 0.15)
+end)
+connect(FloatingBtn.MouseLeave, function()
+    tween(FloatingBtn, {Size = UDim2.fromOffset(60, 60)}, 0.15)
+end)
+
+local draggingSmall = false
+local smallDragStart = nil
+local smallStartPosition = nil
+local clickCandidate = false
+local SMALL_DRAG_THRESHOLD = 5
+connect(FloatingBtn.InputBegan, function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSmall = true
+        clickCandidate = true
+        smallDragStart = input.Position
+        smallStartPosition = FloatingBtn.Position
+    end
+end)
+connect(UserInputService.InputChanged, function(input)
+    if not draggingSmall then return end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        local delta = input.Position - smallDragStart
+        if delta.Magnitude > SMALL_DRAG_THRESHOLD then clickCandidate = false end
+        FloatingBtn.Position = UDim2.new(
+            smallStartPosition.X.Scale, smallStartPosition.X.Offset + delta.X,
+            smallStartPosition.Y.Scale, smallStartPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+connect(UserInputService.InputEnded, function(input)
+    if not draggingSmall then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingSmall = false
+        if clickCandidate then toggleUI() end
+    end
+end)
+
+connect(CloseBtn.MouseButton1Click, destroyUI)
+_G.__CloverfallHomeUIStop = destroyUI
+_G.__RamdomHubStop = destroyUI
+
+-- Entrance animation.
+Main.Size = UDim2.fromOffset(0, 0)
+task.delay(0.05, function()
+    if not destroyed then
+        tween(Main, {Size = CONFIG.UISize, Position = CONFIG.UIOffset}, 0.35, Enum.EasingStyle.Back)
+    end
+end)
 
